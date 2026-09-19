@@ -1,0 +1,19 @@
+{
+  "name": "Coût Réel",
+  "short_name": "Coût Réel",
+  "description": "Calcule le vrai coût d'un achat et gère ta trésorerie personnelle",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f5f2",
+  "theme_color": "#8a5a3f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

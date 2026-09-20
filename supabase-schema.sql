@@ -97,7 +97,8 @@ create table if not exists emprunts (
   "montantEmprunte" numeric,
   "mensualite" numeric,
   "jour" int,
-  "dateFin" date
+  "dateFin" date,
+  "capitalRestant" numeric
 );
 
 -- ---------- OBJECTIFS D'EPARGNE ----------

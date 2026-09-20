@@ -2,12 +2,16 @@
 // et un affichage possible même avec une connexion faible.
 // Les données elles-mêmes viennent toujours de Supabase (jamais mises en cache ici).
 
-const CACHE_NAME = 'cout-reel-v1';
+const CACHE_NAME = 'cout-reel-v2';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './icon.svg'
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-192-maskable.png',
+  './icon-512-maskable.png'
 ];
 
 self.addEventListener('install', (event) => {

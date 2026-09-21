@@ -731,17 +731,21 @@ function makeDb(userId){
       async set(obj){
         if(table==='config'){
           const payload = Object.assign({}, obj, {user_id:userId});
-          await supabaseClient.from('config').upsert(payload, {onConflict:'user_id'});
+          const {error} = await supabaseClient.from('config').upsert(payload, {onConflict:'user_id'});
+          if(error) throw error;
         } else {
           const payload = Object.assign({}, obj, {id, user_id:userId});
-          await supabaseClient.from(table).upsert(payload);
+          const {error} = await supabaseClient.from(table).upsert(payload);
+          if(error) throw error;
         }
       },
       async update(patch){
-        await supabaseClient.from(table).update(patch).eq('id', id).eq('user_id', userId);
+        const {error} = await supabaseClient.from(table).update(patch).eq('id', id).eq('user_id', userId);
+        if(error) throw error;
       },
       async delete(){
-        await supabaseClient.from(table).delete().eq('id', id).eq('user_id', userId);
+        const {error} = await supabaseClient.from(table).delete().eq('id', id).eq('user_id', userId);
+        if(error) throw error;
       }
     };
   }
@@ -972,7 +976,7 @@ document.getElementById('save-config').addEventListener('click', async ()=>{
     try{
       await db.doc('config/main').set(config);
       toast('Configuration enregistrée ✓');
-    }catch(e){ toast('⚠️ Enregistrement local uniquement (base indisponible)'); }
+    }catch(e){ toast('⚠️ Échec de la sauvegarde : '+(e.message||e)); }
   } else {
     toast('⚠️ Configuration prise en compte pour cette session (pas de sauvegarde persistante)');
   }

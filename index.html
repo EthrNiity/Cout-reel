@@ -206,6 +206,7 @@
     <div class="tab" data-tab="nouvel">Simuler un achat</div>
     <div class="tab" data-tab="reeval">À réévaluer</div>
     <div class="tab" data-tab="bilan">Bilan</div>
+    <div class="tab" data-tab="stats">Statistiques</div>
     <div class="tab" data-tab="config">Config</div>
   </div>
 
@@ -274,6 +275,33 @@
     </div>
   </div>
 
+
+  <!-- STATISTIQUES TAB -->
+  <div class="tab-content" id="tab-stats" style="display:none;">
+    <div class="card">
+      <h2>📈 Évolution du solde</h2>
+      <div id="stats-solde-empty" class="empty" style="display:none;">Continue à enregistrer ta configuration régulièrement pour voir cette courbe se construire dans le temps.</div>
+      <div class="sparkline-wrap" id="stats-solde-chart" style="position:relative;"></div>
+    </div>
+
+    <div class="card">
+      <h2>📊 Comparaison mois par mois</h2>
+      <div class="inline-note" style="margin-bottom:8px;">Revenus (vert) vs dépenses (accent), 6 derniers mois.</div>
+      <div id="stats-mois-chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>🥧 Répartition des dépenses par catégorie</h2>
+      <div class="fieldgroup" style="margin-bottom:12px;">
+        <select id="stats-filtre-type" style="max-width:220px;">
+          <option value="tous">Perso + Commun</option>
+          <option value="perso">Personnel uniquement</option>
+          <option value="commun">Commun uniquement</option>
+        </select>
+      </div>
+      <div id="stats-pie-wrap" style="display:flex; gap:20px; align-items:center; flex-wrap:wrap;"></div>
+    </div>
+  </div>
 
   <!-- CONFIG TAB -->
   <div class="tab-content" id="tab-config" style="display:none;">
@@ -364,6 +392,12 @@
           <input type="text" id="a-categorie-autre" placeholder="Précise la catégorie" style="display:none; margin-top:6px;">
         </div>
       </div>
+
+      <label>Type de dépense</label>
+      <select id="a-type">
+        <option value="perso">Personnelle</option>
+        <option value="commun">Commune</option>
+      </select>
 
       <label>Combien d'objets similaires possèdes-tu déjà ?</label>
       <select id="a-similaires">
@@ -479,8 +513,8 @@
   <div class="tab-content" id="tab-depenses" style="display:none;">
     <div class="card">
       <h2>📅 Dépense fixe mensuelle</h2>
-      <label>Nom (ex: Loyer, Assurance, Netflix)</label>
-      <input type="text" id="df-nom" placeholder="ex: Loyer">
+      <label>Nom (ex: Loyer, Basic-Fit, Netflix)</label>
+      <input type="text" id="df-nom" placeholder="ex: Basic-Fit">
       <div class="fieldgroup">
         <div>
           <label>Montant (€)</label>
@@ -491,6 +525,25 @@
           <input type="number" id="df-jour" min="1" max="31" placeholder="ex: 5">
         </div>
       </div>
+      <label>Catégorie <span class="inline-note" id="df-categorie-auto" style="display:inline;"></span></label>
+      <select id="df-categorie">
+        <option value="logement">Logement & factures</option>
+        <option value="vêtements">Vêtements & accessoires</option>
+        <option value="high-tech">High-tech</option>
+        <option value="maison">Maison & déco</option>
+        <option value="loisirs">Loisirs & sport</option>
+        <option value="beauté">Beauté & bien-être</option>
+        <option value="alimentation">Alimentation</option>
+        <option value="transport">Transport</option>
+        <option value="santé">Santé</option>
+        <option value="abonnements">Abonnements</option>
+        <option value="autre">Autre</option>
+      </select>
+      <label>Type de dépense</label>
+      <select id="df-type">
+        <option value="perso">Personnelle</option>
+        <option value="commun">Commune</option>
+      </select>
       <button id="add-depense-fixe">Ajouter la dépense fixe</button>
       <div id="depenses-fixes-list" style="margin-top:14px;"><div class="empty">Aucune dépense fixe.</div></div>
     </div>
@@ -509,6 +562,25 @@
           <input type="date" id="ech-date">
         </div>
       </div>
+      <label>Catégorie <span class="inline-note" id="ech-categorie-auto" style="display:inline;"></span></label>
+      <select id="ech-categorie">
+        <option value="logement">Logement & factures</option>
+        <option value="vêtements">Vêtements & accessoires</option>
+        <option value="high-tech">High-tech</option>
+        <option value="maison">Maison & déco</option>
+        <option value="loisirs">Loisirs & sport</option>
+        <option value="beauté">Beauté & bien-être</option>
+        <option value="alimentation">Alimentation</option>
+        <option value="transport">Transport</option>
+        <option value="santé">Santé</option>
+        <option value="abonnements">Abonnements</option>
+        <option value="autre">Autre</option>
+      </select>
+      <label>Type de dépense</label>
+      <select id="ech-type">
+        <option value="perso">Personnelle</option>
+        <option value="commun">Commune</option>
+      </select>
       <button id="add-echeance">Ajouter l'échéance</button>
       <div id="echeances-list" style="margin-top:14px;"><div class="empty">Aucune échéance à venir.</div></div>
     </div>
@@ -824,6 +896,7 @@ let dettesCache = [];
 let empruntsCache = [];
 let budgetsCache = [];
 let objectifsCache = [];
+let soldeHistoriqueCache = [];
 
 function toast(msg){
   const t = document.getElementById('toast');
@@ -831,6 +904,44 @@ function toast(msg){
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), 2400);
 }
+// ---------- AUTO-CATEGORISATION ----------
+const DICO_CATEGORIES = [
+  {mots:['basic-fit','basicfit','fitness park','keepcool','keep cool','vitagym','orange bleue','magic form','piscine','salle de sport','on air'], cat:'loisirs'},
+  {mots:['netflix','spotify','disney','deezer','canal+','ocs','amazon prime','apple music','youtube premium','crunchyroll'], cat:'abonnements'},
+  {mots:['edf','engie','totalenergies électricité','eau','loyer','électricité','electricite','gaz','veolia','syndic','assurance habitation'], cat:'logement'},
+  {mots:['free','sfr','bouygues','orange telecom','red by sfr','sosh','internet','forfait mobile'], cat:'abonnements'},
+  {mots:['sncf','blablacar','essence','carburant','total energies','parking','assurance auto','péage','entretien voiture','garage'], cat:'transport'},
+  {mots:['carrefour','leclerc','auchan','lidl','monoprix','franprix','intermarché','biocoop','boulangerie'], cat:'alimentation'},
+  {mots:['pharmacie','mutuelle','médecin','medecin','dentiste','opticien','kiné','kine'], cat:'santé'},
+  {mots:['zara','h&m','uniqlo','decathlon','chaussures','vêtement','vetement'], cat:'vêtements'},
+  {mots:['ikea','leroy merlin','castorama','but','conforama','maison du monde'], cat:'maison'},
+  {mots:['fnac','darty','apple','samsung','boulanger','materiel.net','ldlc'], cat:'high-tech'},
+  {mots:['sephora','institut','coiffeur','manucure','spa'], cat:'beauté'}
+];
+function suggererCategorie(nom){
+  if(!nom) return null;
+  const n = nom.toLowerCase();
+  for(const entry of DICO_CATEGORIES){
+    if(entry.mots.some(m=>n.includes(m))) return entry.cat;
+  }
+  return null;
+}
+function brancherAutoCategorisation(inputId, selectId, noteId){
+  const input = document.getElementById(inputId);
+  const select = document.getElementById(selectId);
+  const note = document.getElementById(noteId);
+  let modifieManuellement = false;
+  select.addEventListener('change', ()=>{ modifieManuellement = true; if(note) note.textContent=''; });
+  input.addEventListener('input', ()=>{
+    if(modifieManuellement) return;
+    const cat = suggererCategorie(input.value);
+    if(cat){
+      select.value = cat;
+      if(note) note.textContent = '(détectée automatiquement, modifiable)';
+    } else if(note){ note.textContent = ''; }
+  });
+}
+
 function todayISO(){
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -857,6 +968,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     if(tab.dataset.tab==='depenses') renderDepensesTab();
     if(tab.dataset.tab==='calendrier') renderCalendrierTab();
     if(tab.dataset.tab==='patrimoine') renderPatrimoineTab();
+    if(tab.dataset.tab==='stats') renderStatsTab();
   });
 });
 function goToTab(name){
@@ -975,6 +1087,7 @@ document.getElementById('save-config').addEventListener('click', async ()=>{
   if(db){
     try{
       await db.doc('config/main').set(config);
+      await enregistrerSnapshotSolde(config.soldeActuel);
       toast('Configuration enregistrée ✓');
     }catch(e){ toast('⚠️ Échec de la sauvegarde : '+(e.message||e)); }
   } else {
@@ -982,6 +1095,24 @@ document.getElementById('save-config').addEventListener('click', async ()=>{
   }
   updateTauxDisplay();
 });
+
+async function enregistrerSnapshotSolde(solde){
+  const today = todayISO();
+  const dejaAujourdhui = soldeHistoriqueCache.find(s=>s.date===today);
+  if(dejaAujourdhui){
+    dejaAujourdhui.solde = solde;
+    if(db){ try{ await db.doc('solde_historique/'+dejaAujourdhui.id).update({solde}); }catch(e){} }
+  } else {
+    const snap = {date: today, solde};
+    if(db){ try{ const ref = await db.collection('solde_historique').add(snap); snap.id = ref.id; }catch(e){ snap.id='local-'+Date.now(); } }
+    soldeHistoriqueCache.push(snap);
+  }
+}
+async function chargerSoldeHistorique(){
+  if(db){
+    try{ const s = await db.collection('solde_historique').get(); soldeHistoriqueCache = s.docs.map(d=>({id:d.id, ...d.data()})); }catch(e){}
+  }
+}
 
 document.getElementById('export-data-btn').addEventListener('click', async ()=>{
   await chargerAchats(); await chargerDepenses(); await chargerPatrimoine();
@@ -1139,7 +1270,12 @@ function renderDepensesFixesList(){
     div.className = 'depense-item-wrap';
     div.innerHTML = `
       <div class="depense-item">
-        <div><b>${d.nom}</b><div class="meta">${(d.montant||0).toFixed(2)}€ · le ${d.jour} du mois</div></div>
+        <div>
+          <b>${d.nom}</b>
+          <div class="meta">${(d.montant||0).toFixed(2)}€ · le ${d.jour} du mois</div>
+          <span class="cat-pill">${d.categorie||'autre'}</span>
+          <span class="cat-pill" style="background:${d.type==='commun'?'var(--soft-good-bg)':'var(--soft-neutral-bg)'}; color:${d.type==='commun'?'var(--good)':'var(--muted)'};">${d.type==='commun'?'Commune':'Perso'}</span>
+        </div>
         <div style="display:flex; gap:4px; flex-shrink:0;">
           <button type="button" class="del-btn" data-edit="${d.id}" style="color:var(--accent);">✏️</button>
           <button class="del-btn" data-id="${d.id}">✕</button>
@@ -1149,6 +1285,23 @@ function renderDepensesFixesList(){
         <input type="text" id="edit-df-nom-${d.id}" value="${d.nom}" placeholder="Nom" style="flex:2 1 100%;">
         <input type="number" id="edit-df-montant-${d.id}" value="${d.montant}" placeholder="Montant">
         <input type="number" id="edit-df-jour-${d.id}" value="${d.jour}" min="1" max="31" placeholder="Jour">
+        <select id="edit-df-categorie-${d.id}" style="flex:1 1 100%;">
+          <option value="logement" ${d.categorie==='logement'?'selected':''}>Logement & factures</option>
+          <option value="vêtements" ${d.categorie==='vêtements'?'selected':''}>Vêtements & accessoires</option>
+          <option value="high-tech" ${d.categorie==='high-tech'?'selected':''}>High-tech</option>
+          <option value="maison" ${d.categorie==='maison'?'selected':''}>Maison & déco</option>
+          <option value="loisirs" ${d.categorie==='loisirs'?'selected':''}>Loisirs & sport</option>
+          <option value="beauté" ${d.categorie==='beauté'?'selected':''}>Beauté & bien-être</option>
+          <option value="alimentation" ${d.categorie==='alimentation'?'selected':''}>Alimentation</option>
+          <option value="transport" ${d.categorie==='transport'?'selected':''}>Transport</option>
+          <option value="santé" ${d.categorie==='santé'?'selected':''}>Santé</option>
+          <option value="abonnements" ${d.categorie==='abonnements'?'selected':''}>Abonnements</option>
+          <option value="autre" ${d.categorie==='autre'?'selected':''}>Autre</option>
+        </select>
+        <select id="edit-df-type-${d.id}" style="flex:1 1 100%;">
+          <option value="perso" ${d.type==='perso'?'selected':''}>Personnelle</option>
+          <option value="commun" ${d.type==='commun'?'selected':''}>Commune</option>
+        </select>
         <button type="button" class="small" style="margin-top:0;" data-save="${d.id}">Enregistrer</button>
       </div>
     `;
@@ -1159,8 +1312,10 @@ function renderDepensesFixesList(){
       const nom = document.getElementById('edit-df-nom-'+d.id).value || d.nom;
       const montant = parseFloat(document.getElementById('edit-df-montant-'+d.id).value)||d.montant;
       const jour = parseInt(document.getElementById('edit-df-jour-'+d.id).value)||d.jour;
-      d.nom = nom; d.montant = montant; d.jour = jour;
-      if(db){ try{ await db.doc('depenses_fixes/'+d.id).update({nom, montant, jour}); }catch(e){} }
+      const categorie = document.getElementById('edit-df-categorie-'+d.id).value;
+      const type = document.getElementById('edit-df-type-'+d.id).value;
+      d.nom = nom; d.montant = montant; d.jour = jour; d.categorie = categorie; d.type = type;
+      if(db){ try{ await db.doc('depenses_fixes/'+d.id).update({nom, montant, jour, categorie, type}); }catch(e){} }
       renderDepensesFixesList();
       renderProjection();
       toast('Dépense fixe mise à jour');
@@ -1187,7 +1342,12 @@ function renderEcheancesList(){
     div.className = 'depense-item-wrap';
     div.innerHTML = `
       <div class="depense-item">
-        <div><b>${d.nom}</b><div class="meta">${(d.montant||0).toFixed(2)}€ · ${fmtDateFr(new Date(d.date))}</div></div>
+        <div>
+          <b>${d.nom}</b>
+          <div class="meta">${(d.montant||0).toFixed(2)}€ · ${fmtDateFr(new Date(d.date))}</div>
+          <span class="cat-pill">${d.categorie||'autre'}</span>
+          <span class="cat-pill" style="background:${d.type==='commun'?'var(--soft-good-bg)':'var(--soft-neutral-bg)'}; color:${d.type==='commun'?'var(--good)':'var(--muted)'};">${d.type==='commun'?'Commune':'Perso'}</span>
+        </div>
         <div style="display:flex; gap:4px; flex-shrink:0;">
           <button type="button" class="del-btn" data-edit="${d.id}" style="color:var(--accent);">✏️</button>
           <button class="del-btn" data-id="${d.id}">✕</button>
@@ -1197,6 +1357,23 @@ function renderEcheancesList(){
         <input type="text" id="edit-ech-nom-${d.id}" value="${d.nom}" placeholder="Nom" style="flex:2 1 100%;">
         <input type="number" id="edit-ech-montant-${d.id}" value="${d.montant}" placeholder="Montant">
         <input type="date" id="edit-ech-date-${d.id}" value="${d.date}">
+        <select id="edit-ech-categorie-${d.id}" style="flex:1 1 100%;">
+          <option value="logement" ${d.categorie==='logement'?'selected':''}>Logement & factures</option>
+          <option value="vêtements" ${d.categorie==='vêtements'?'selected':''}>Vêtements & accessoires</option>
+          <option value="high-tech" ${d.categorie==='high-tech'?'selected':''}>High-tech</option>
+          <option value="maison" ${d.categorie==='maison'?'selected':''}>Maison & déco</option>
+          <option value="loisirs" ${d.categorie==='loisirs'?'selected':''}>Loisirs & sport</option>
+          <option value="beauté" ${d.categorie==='beauté'?'selected':''}>Beauté & bien-être</option>
+          <option value="alimentation" ${d.categorie==='alimentation'?'selected':''}>Alimentation</option>
+          <option value="transport" ${d.categorie==='transport'?'selected':''}>Transport</option>
+          <option value="santé" ${d.categorie==='santé'?'selected':''}>Santé</option>
+          <option value="abonnements" ${d.categorie==='abonnements'?'selected':''}>Abonnements</option>
+          <option value="autre" ${d.categorie==='autre'?'selected':''}>Autre</option>
+        </select>
+        <select id="edit-ech-type-${d.id}" style="flex:1 1 100%;">
+          <option value="perso" ${d.type==='perso'?'selected':''}>Personnelle</option>
+          <option value="commun" ${d.type==='commun'?'selected':''}>Commune</option>
+        </select>
         <button type="button" class="small" style="margin-top:0;" data-save="${d.id}">Enregistrer</button>
       </div>
     `;
@@ -1207,8 +1384,10 @@ function renderEcheancesList(){
       const nom = document.getElementById('edit-ech-nom-'+d.id).value || d.nom;
       const montant = parseFloat(document.getElementById('edit-ech-montant-'+d.id).value)||d.montant;
       const date = document.getElementById('edit-ech-date-'+d.id).value || d.date;
-      d.nom = nom; d.montant = montant; d.date = date;
-      if(db){ try{ await db.doc('echeances/'+d.id).update({nom, montant, date}); }catch(e){} }
+      const categorie = document.getElementById('edit-ech-categorie-'+d.id).value;
+      const type = document.getElementById('edit-ech-type-'+d.id).value;
+      d.nom = nom; d.montant = montant; d.date = date; d.categorie = categorie; d.type = type;
+      if(db){ try{ await db.doc('echeances/'+d.id).update({nom, montant, date, categorie, type}); }catch(e){} }
       renderEcheancesList();
       renderProjection();
       toast('Échéance mise à jour');
@@ -1223,12 +1402,17 @@ function renderEcheancesList(){
   });
 }
 
+brancherAutoCategorisation('df-nom','df-categorie','df-categorie-auto');
+brancherAutoCategorisation('ech-nom','ech-categorie','ech-categorie-auto');
+
 document.getElementById('add-depense-fixe').addEventListener('click', async ()=>{
   const nom = document.getElementById('df-nom').value;
   const montant = parseFloat(document.getElementById('df-montant').value)||0;
   const jour = parseInt(document.getElementById('df-jour').value)||1;
+  const categorie = document.getElementById('df-categorie').value;
+  const type = document.getElementById('df-type').value;
   if(!nom || montant<=0){ toast('Renseigne un nom et un montant valides'); return; }
-  const dep = {nom, montant, jour};
+  const dep = {nom, montant, jour, categorie, type};
   if(db){
     try{ const ref = await db.collection('depenses_fixes').add(dep); dep.id = ref.id; }catch(e){ dep.id = 'local-'+Date.now(); }
   } else { dep.id = 'local-'+Date.now(); }
@@ -1236,6 +1420,9 @@ document.getElementById('add-depense-fixe').addEventListener('click', async ()=>
   document.getElementById('df-nom').value='';
   document.getElementById('df-montant').value='';
   document.getElementById('df-jour').value='';
+  document.getElementById('df-categorie').value='logement';
+  document.getElementById('df-type').value='perso';
+  document.getElementById('df-categorie-auto').textContent='';
   renderDepensesFixesList();
   renderProjection();
   toast('Dépense fixe ajoutée');
@@ -1245,8 +1432,10 @@ document.getElementById('add-echeance').addEventListener('click', async ()=>{
   const nom = document.getElementById('ech-nom').value;
   const montant = parseFloat(document.getElementById('ech-montant').value)||0;
   const date = document.getElementById('ech-date').value;
+  const categorie = document.getElementById('ech-categorie').value;
+  const type = document.getElementById('ech-type').value;
   if(!nom || montant<=0 || !date){ toast('Renseigne nom, montant et date'); return; }
-  const ech = {nom, montant, date};
+  const ech = {nom, montant, date, categorie, type};
   if(db){
     try{ const ref = await db.collection('echeances').add(ech); ech.id = ref.id; }catch(e){ ech.id = 'local-'+Date.now(); }
   } else { ech.id = 'local-'+Date.now(); }
@@ -1254,6 +1443,9 @@ document.getElementById('add-echeance').addEventListener('click', async ()=>{
   document.getElementById('ech-nom').value='';
   document.getElementById('ech-montant').value='';
   document.getElementById('ech-date').value='';
+  document.getElementById('ech-categorie').value='logement';
+  document.getElementById('ech-type').value='perso';
+  document.getElementById('ech-categorie-auto').textContent='';
   renderEcheancesList();
   renderProjection();
   toast('Échéance ajoutée');
@@ -1613,6 +1805,185 @@ async function renderCalendrierTab(){
   renderProjection();
 }
 
+// ---------- STATISTIQUES ----------
+async function renderStatsTab(){
+  await chargerSoldeHistorique();
+  await chargerDepenses();
+  await chargerAchats();
+  renderSoldeHistoriqueChart();
+  renderComparaisonMois();
+  renderRepartitionCategories();
+}
+
+function renderSoldeHistoriqueChart(){
+  const points = soldeHistoriqueCache.slice().sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const emptyEl = document.getElementById('stats-solde-empty');
+  const chartEl = document.getElementById('stats-solde-chart');
+  if(points.length < 2){
+    emptyEl.style.display = 'block';
+    chartEl.innerHTML = '';
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  const cs = getComputedStyle(document.documentElement);
+  const lineColor = cs.getPropertyValue('--sparkline-line').trim() || '#8a5a3f';
+  const gridColor = cs.getPropertyValue('--sparkline-grid').trim() || '#eee0d4';
+  const textColor = cs.getPropertyValue('--muted').trim() || '#7a7268';
+
+  const w = 560, h = 140, padLeft=48, padRight=10, padTop=10, padBottom=24;
+  const soldes = points.map(p=>p.solde);
+  const min = Math.min(...soldes, 0);
+  const max = Math.max(...soldes, 1);
+  const range = (max-min)||1;
+  const plotH = h - padTop - padBottom;
+  const plotW = w - padLeft - padRight;
+  const step = points.length>1 ? plotW/(points.length-1) : 0;
+
+  function xOf(i){ return padLeft + i*step; }
+  function yOf(v){ return padTop + plotH - ((v-min)/range)*plotH; }
+
+  let path = '';
+  points.forEach((p,i)=>{ path += (i===0?'M':'L')+xOf(i).toFixed(1)+','+yOf(p.solde).toFixed(1)+' '; });
+
+  const tickIdx = points.length<=5 ? points.map((_,i)=>i) : [0, Math.floor((points.length-1)*0.33), Math.floor((points.length-1)*0.66), points.length-1];
+  let ticks = '';
+  tickIdx.forEach(i=>{
+    const x = xOf(i);
+    ticks += `<text x="${x.toFixed(1)}" y="${h-6}" font-size="10" fill="${textColor}" text-anchor="middle">${fmtDateFr(new Date(points[i].date))}</text>`;
+  });
+  let yLabels = '';
+  [min, max].forEach(v=>{
+    yLabels += `<text x="${(padLeft-6).toFixed(1)}" y="${(yOf(v)+3).toFixed(1)}" font-size="10" fill="${textColor}" text-anchor="end">${v.toFixed(0)}€</text>`;
+  });
+  const dots = points.map((p,i)=>`<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(p.solde).toFixed(1)}" r="3" fill="${lineColor}"/>`).join('');
+
+  chartEl.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">
+    ${yLabels}${ticks}
+    <path d="${path}" fill="none" stroke="${lineColor}" stroke-width="2"/>
+    ${dots}
+  </svg>`;
+}
+
+function resumeMoisComplet(year, month){
+  const base = resumeMois(year, month);
+  let depensesAchats = 0;
+  achatsCache.forEach(a=>{
+    if(a.decision!=='achete') return;
+    const d = new Date(a.dateAchat);
+    if(d.getFullYear()===year && d.getMonth()===month) depensesAchats += (a.prix||0);
+  });
+  return {revenus: base.revenus, depenses: base.depenses + depensesAchats};
+}
+
+function renderComparaisonMois(){
+  const cs = getComputedStyle(document.documentElement);
+  const goodColor = cs.getPropertyValue('--good').trim();
+  const accentColor = cs.getPropertyValue('--accent').trim();
+  const textColor = cs.getPropertyValue('--muted').trim();
+
+  const now = new Date();
+  const mois = [];
+  for(let i=5; i>=0; i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const r = resumeMoisComplet(d.getFullYear(), d.getMonth());
+    mois.push({label: d.toLocaleDateString('fr-FR',{month:'short'}), ...r});
+  }
+  const maxVal = Math.max(1, ...mois.map(m=>Math.max(m.revenus, m.depenses)));
+
+  const w = 560, h = 180, padLeft=10, padRight=10, padTop=10, padBottom=26;
+  const plotH = h - padTop - padBottom;
+  const groupW = (w - padLeft - padRight) / mois.length;
+  const barW = groupW * 0.32;
+
+  let bars = '';
+  mois.forEach((m,i)=>{
+    const gx = padLeft + i*groupW + groupW/2;
+    const hRevenu = (m.revenus/maxVal)*plotH;
+    const hDepense = (m.depenses/maxVal)*plotH;
+    const xRevenu = gx - barW - 2;
+    const xDepense = gx + 2;
+    bars += `<rect x="${xRevenu.toFixed(1)}" y="${(padTop+plotH-hRevenu).toFixed(1)}" width="${barW.toFixed(1)}" height="${hRevenu.toFixed(1)}" fill="${goodColor}" rx="2"/>`;
+    bars += `<rect x="${xDepense.toFixed(1)}" y="${(padTop+plotH-hDepense).toFixed(1)}" width="${barW.toFixed(1)}" height="${hDepense.toFixed(1)}" fill="${accentColor}" rx="2"/>`;
+    bars += `<text x="${gx.toFixed(1)}" y="${h-8}" font-size="10" fill="${textColor}" text-anchor="middle">${m.label}</text>`;
+  });
+
+  document.getElementById('stats-mois-chart').innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">${bars}</svg>`;
+}
+
+const NOMS_CATEGORIES = {
+  'logement':'Logement & factures','vêtements':'Vêtements','high-tech':'High-tech','maison':'Maison & déco',
+  'loisirs':'Loisirs & sport','beauté':'Beauté & bien-être','alimentation':'Alimentation','transport':'Transport',
+  'santé':'Santé','abonnements':'Abonnements','autre':'Autre'
+};
+const COULEURS_CATEGORIES = ['#8a5a3f','#4a7c59','#b5533c','#6d5a8f','#b8873c','#5f8a9e','#a35f8a','#7a9e5f','#9e7a5f','#5f7a9e','#9e5f7a'];
+
+function renderRepartitionCategories(){
+  const filtre = document.getElementById('stats-filtre-type').value;
+  const now = new Date();
+  const totaux = {};
+
+  function addMontant(cat, type, montant){
+    if(filtre!=='tous' && type && type!==filtre) return;
+    const key = cat||'autre';
+    totaux[key] = (totaux[key]||0) + montant;
+  }
+
+  achatsCache.forEach(a=>{
+    if(a.decision!=='achete') return;
+    const d = new Date(a.dateAchat);
+    if(d.getFullYear()!==now.getFullYear() || d.getMonth()!==now.getMonth()) return;
+    addMontant(a.categorie, a.type||'perso', a.prix||0);
+  });
+  depensesFixesCache.forEach(dep=>{
+    addMontant(dep.categorie||'autre', dep.type||'perso', dep.montant||0);
+  });
+  echeancesCache.forEach(ech=>{
+    const d = new Date(ech.date);
+    if(d.getFullYear()!==now.getFullYear() || d.getMonth()!==now.getMonth()) return;
+    addMontant(ech.categorie||'autre', ech.type||'perso', ech.montant||0);
+  });
+
+  const entries = Object.entries(totaux).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const wrap = document.getElementById('stats-pie-wrap');
+  if(entries.length===0){
+    wrap.innerHTML = '<div class="empty">Aucune dépense catégorisée ce mois-ci.</div>';
+    return;
+  }
+  const total = entries.reduce((s,[,v])=>s+v,0);
+
+  let cumul = 0;
+  const cx=90, cy=90, r=80;
+  let slices = '';
+  entries.forEach(([cat,val],i)=>{
+    const startAngle = (cumul/total)*2*Math.PI;
+    cumul += val;
+    const endAngle = (cumul/total)*2*Math.PI;
+    const x1 = cx + r*Math.sin(startAngle), y1 = cy - r*Math.cos(startAngle);
+    const x2 = cx + r*Math.sin(endAngle), y2 = cy - r*Math.cos(endAngle);
+    const largeArc = (endAngle-startAngle) > Math.PI ? 1 : 0;
+    const color = COULEURS_CATEGORIES[i % COULEURS_CATEGORIES.length];
+    slices += `<path d="M${cx},${cy} L${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${largeArc} 1 ${x2.toFixed(1)},${y2.toFixed(1)} Z" fill="${color}"/>`;
+  });
+  const svg = `<svg viewBox="0 0 180 180" width="180" height="180">${slices}</svg>`;
+
+  let legend = '<div style="flex:1; min-width:180px;">';
+  entries.forEach(([cat,val],i)=>{
+    const pct = Math.round(100*val/total);
+    const color = COULEURS_CATEGORIES[i % COULEURS_CATEGORIES.length];
+    legend += `<div style="display:flex; align-items:center; gap:8px; padding:5px 0; font-size:13px;">
+      <span style="width:11px; height:11px; border-radius:3px; background:${color}; flex-shrink:0;"></span>
+      <span style="flex:1;">${NOMS_CATEGORIES[cat]||cat}</span>
+      <b>${val.toFixed(0)}€</b>
+      <span style="color:var(--muted); min-width:34px; text-align:right;">${pct}%</span>
+    </div>`;
+  });
+  legend += '</div>';
+
+  wrap.innerHTML = svg + legend;
+}
+document.getElementById('stats-filtre-type').addEventListener('change', renderRepartitionCategories);
+
 // ---------- PATRIMOINE : ÉPARGNE, DETTES, EMPRUNTS ----------
 async function chargerPatrimoine(){
   if(db){
@@ -1950,6 +2321,7 @@ document.getElementById('a-etale').addEventListener('change', e=>{
 });
 
 function resetNouvelAchatForm(){
+  document.getElementById('a-type').value = 'perso';
   document.getElementById('a-nom').value = '';
   document.getElementById('a-prix').value = '';
   document.getElementById('a-categorie').value = 'vêtements';
@@ -1980,6 +2352,7 @@ document.getElementById('calc-btn').addEventListener('click', ()=>{
   if(prix<=0){ toast('Indique un prix pour calculer'); return; }
   const catSel = document.getElementById('a-categorie').value;
   const categorie = catSel==='autre' ? (document.getElementById('a-categorie-autre').value||'autre').toLowerCase().trim() : catSel;
+  const type = document.getElementById('a-type').value;
   const similaires = parseInt(document.getElementById('a-similaires').value)||0;
   const dureeSel = document.getElementById('a-duree').value;
   const duree = dureeSel==='autre' ? (parseFloat(document.getElementById('a-duree-autre').value)||0) : parseFloat(dureeSel);
@@ -2060,7 +2433,7 @@ document.getElementById('calc-btn').addEventListener('click', ()=>{
   verdictEl.innerHTML = `<div class="verdict ${verdictClass}">${verdictTxt}<div class="sub-verdict">${verdictSub}</div></div>`;
 
   dernierCalcul = {
-    nom, prix, categorie, similaires, duree, usages, locationPossible, coutLocation, envie,
+    nom, prix, categorie, type, similaires, duree, usages, locationPossible, coutLocation, envie,
     heures, coutParUsage, coutParJour, seuil, datePrevue, etale, nbFois,
     dateAchat: new Date().toISOString(),
     heureAchat: new Date().getHours(),

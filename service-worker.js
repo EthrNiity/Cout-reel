@@ -2,7 +2,7 @@
 // et un affichage possible même avec une connexion faible.
 // Les données elles-mêmes viennent toujours de Supabase (jamais mises en cache ici).
 
-const CACHE_NAME = 'cout-reel-v2';
+const CACHE_NAME = 'cout-reel-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -35,7 +35,17 @@ self.addEventListener('fetch', (event) => {
   // Ne jamais mettre en cache les appels à Supabase : toujours du réseau frais.
   if (url.hostname.endsWith('.supabase.co')) return;
 
+  // Stratégie "réseau d'abord" : on va toujours chercher la dernière version
+  // en ligne en priorité, et on ne retombe sur le cache qu'en cas d'échec
+  // (hors-ligne). Ça évite qu'une ancienne version reste bloquée en cache
+  // après une mise à jour du code.
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

@@ -1723,7 +1723,7 @@ function resumeMois(year, month){
 function renderVueEnsemble(){
   const solde = config.soldeActuel||0;
   const totalEpargne = epargnesCache.reduce((s,e)=>s+(e.montant||0),0);
-  const totalDettes = dettesCache.reduce((s,d)=>s+(d.montantRestant!==undefined?d.montantRestant:d.montantInitial),0);
+  const totalDettes = dettesCache.reduce((s,d)=>s+soldeDette(d),0);
   const totalEmprunts = empruntsCache.reduce((s,em)=>s+capitalRestantEmprunt(em),0);
   const net = solde + totalEpargne - totalDettes - totalEmprunts;
   document.getElementById('ov-net').textContent = net.toFixed(0)+'€';
@@ -2113,16 +2113,53 @@ document.getElementById('add-objectif').addEventListener('click', async ()=>{
 });
 
 
+function soldeDette(dette, atDateISO){
+  atDateISO = atDateISO || todayISO();
+  if(dette.remboursements && dette.remboursements.length){
+    const rembourseTotal = dette.remboursements.filter(r=>r.date<=atDateISO).reduce((s,r)=>s+(r.montant||0),0);
+    return Math.max(0, (dette.montantInitial||0) - rembourseTotal);
+  }
+  return dette.montantRestant!==undefined ? dette.montantRestant : dette.montantInitial;
+}
+async function sauvegarderRemboursements(dt){
+  if(db){ try{ await db.doc('dettes/'+dt.id).update({remboursements: dt.remboursements}); }catch(e){} }
+}
 function renderDettesList(){
   const el = document.getElementById('dettes-list');
   if(dettesCache.length===0){ el.innerHTML = '<div class="empty">Aucune dette enregistrée.</div>'; return; }
   el.innerHTML = '';
   dettesCache.forEach(dt=>{
-    const restant = dt.montantRestant!==undefined ? dt.montantRestant : dt.montantInitial;
+    if(!dt.remboursements) dt.remboursements = [];
+    const restant = soldeDette(dt);
     const pct = dt.montantInitial>0 ? Math.max(0, Math.min(100, 100*(1-restant/dt.montantInitial))) : 100;
     const soldee = restant<=0;
     const div = document.createElement('div');
     div.className = 'patrimoine-item';
+
+    let historiqueHtml = '';
+    if(dt.remboursements.length){
+      const futursCount = dt.remboursements.filter(r=>r.date>todayISO()).length;
+      historiqueHtml = `<div class="meta" style="margin-top:6px;">Remboursements :</div>`;
+      dt.remboursements.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).forEach(r=>{
+        const futur = r.date > todayISO();
+        historiqueHtml += `
+          <div class="depense-item" style="padding:6px 0;">
+            <div><span style="font-size:13px;">${fmtDateFr(new Date(r.date))}${futur?' <span class="inline-note" style="display:inline;">(à venir, pas encore décompté)</span>':''}</span></div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <b style="font-size:13px;">${r.montant.toFixed(0)}€</b>
+              <button type="button" class="del-btn" data-edit-r="${r.id}" style="color:var(--accent); font-size:14px;">✏️</button>
+              <button type="button" class="del-btn" data-del-r="${r.id}" style="font-size:14px;">✕</button>
+            </div>
+          </div>
+          <div class="rembourse-form" id="edit-remb-${r.id}">
+            <input type="number" id="edit-remb-montant-${r.id}" value="${r.montant}">
+            <input type="date" id="edit-remb-date-${r.id}" value="${r.date}">
+            <button type="button" class="small" style="margin-top:0;" data-save-r="${r.id}">OK</button>
+          </div>
+        `;
+      });
+    }
+
     div.innerHTML = `
       <div class="top-row">
         <b>${dt.nom}${soldee ? ' ✓' : ''}</b>
@@ -2133,6 +2170,7 @@ function renderDettesList(){
       </div>
       <div class="meta">sur ${dt.montantInitial.toFixed(0)}€ initial</div>
       <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct.toFixed(0)}%;"></div></div>
+      ${historiqueHtml}
       ${!soldee ? `<button type="button" class="small secondary" style="margin-top:8px;" data-toggle="${dt.id}">Rembourser une partie</button>
       <div class="rembourse-form" id="rf-${dt.id}">
         <input type="number" placeholder="Montant" id="rf-montant-${dt.id}">
@@ -2158,21 +2196,61 @@ function renderDettesList(){
         const montant = parseFloat(document.getElementById('rf-montant-'+dt.id).value)||0;
         const date = document.getElementById('rf-date-'+dt.id).value || todayISO();
         if(montant<=0){ toast('Indique un montant à rembourser'); return; }
-        const nouveauRestant = Math.max(0, restant - montant);
-        dt.montantRestant = nouveauRestant;
-        if(db){
-          try{ await db.doc('dettes/'+dt.id).update({montantRestant: nouveauRestant}); }catch(e){}
-        }
+        const remboursementId = 'r-'+Date.now()+Math.floor(Math.random()*1000);
         const ech = {nom: 'Remboursement : '+dt.nom, montant, date};
         if(db){
           try{ const ref = await db.collection('echeances').add(ech); ech.id = ref.id; }catch(e){ ech.id='local-'+Date.now(); }
         } else { ech.id = 'local-'+Date.now(); }
         echeancesCache.push(ech);
-        toast('Remboursement enregistré ✓');
+        dt.remboursements.push({id: remboursementId, montant, date, echeanceId: ech.id});
+        await sauvegarderRemboursements(dt);
+        toast(date > todayISO() ? 'Remboursement planifié — comptera à partir du '+fmtDateFr(new Date(date)) : 'Remboursement enregistré ✓');
         renderDettesList();
         renderPatrimoineOverview();
+        renderProjection();
       });
     }
+    div.querySelectorAll('[data-edit-r]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.getElementById('edit-remb-'+btn.dataset.editR).classList.toggle('show');
+      });
+    });
+    div.querySelectorAll('[data-save-r]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const rId = btn.dataset.saveR;
+        const r = dt.remboursements.find(x=>x.id===rId);
+        if(!r) return;
+        const nouveauMontant = parseFloat(document.getElementById('edit-remb-montant-'+rId).value)||r.montant;
+        const nouvelleDate = document.getElementById('edit-remb-date-'+rId).value||r.date;
+        r.montant = nouveauMontant; r.date = nouvelleDate;
+        await sauvegarderRemboursements(dt);
+        if(r.echeanceId && db){
+          try{ await db.doc('echeances/'+r.echeanceId).update({montant: nouveauMontant, date: nouvelleDate}); }catch(e){}
+        }
+        const echLocale = echeancesCache.find(e=>e.id===r.echeanceId);
+        if(echLocale){ echLocale.montant = nouveauMontant; echLocale.date = nouvelleDate; }
+        toast('Remboursement mis à jour');
+        renderDettesList();
+        renderPatrimoineOverview();
+        renderProjection();
+      });
+    });
+    div.querySelectorAll('[data-del-r]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const rId = btn.dataset.delR;
+        const r = dt.remboursements.find(x=>x.id===rId);
+        dt.remboursements = dt.remboursements.filter(x=>x.id!==rId);
+        await sauvegarderRemboursements(dt);
+        if(r && r.echeanceId){
+          if(db){ try{ await db.doc('echeances/'+r.echeanceId).delete(); }catch(e){} }
+          echeancesCache = echeancesCache.filter(e=>e.id!==r.echeanceId);
+        }
+        toast('Remboursement supprimé');
+        renderDettesList();
+        renderPatrimoineOverview();
+        renderProjection();
+      });
+    });
     el.appendChild(div);
   });
 }
@@ -2228,7 +2306,7 @@ function renderEmpruntsList(){
 function renderPatrimoineOverview(){
   const solde = config.soldeActuel||0;
   const totalEpargne = epargnesCache.reduce((s,e)=>s+(e.montant||0),0);
-  const totalDettes = dettesCache.reduce((s,d)=>s+(d.montantRestant!==undefined?d.montantRestant:d.montantInitial),0);
+  const totalDettes = dettesCache.reduce((s,d)=>s+soldeDette(d),0);
   const totalEmprunts = empruntsCache.reduce((s,em)=>s+capitalRestantEmprunt(em),0);
   const net = solde + totalEpargne - totalDettes - totalEmprunts;
   document.getElementById('pat-solde').textContent = solde.toFixed(0)+'€';

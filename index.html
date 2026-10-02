@@ -1125,24 +1125,30 @@ function updateTauxDisplay(){
   });
 });
 
+let soldeModifieManuellement = false;
+document.getElementById('cfg-solde').addEventListener('input', ()=>{ soldeModifieManuellement = true; });
+
 document.getElementById('save-config').addEventListener('click', async ()=>{
   config.salaireNet = parseFloat(document.getElementById('cfg-salaire').value)||0;
   config.salaireJour = parseInt(document.getElementById('cfg-salaire-jour').value)||1;
   config.heuresSemaine = parseFloat(document.getElementById('cfg-heures').value)||0;
   config.heuresTravail = config.heuresSemaine * (52/12);
-  config.soldeActuel = parseFloat(document.getElementById('cfg-solde').value)||0;
-  config.soldeActuelDate = todayISO();
+  if(soldeModifieManuellement){
+    config.soldeActuel = parseFloat(document.getElementById('cfg-solde').value)||0;
+    config.soldeActuelDate = todayISO();
+  }
   config.refVacances = parseFloat(document.getElementById('cfg-vacances').value)||0;
   config.refLoyer = parseFloat(document.getElementById('cfg-loyer').value)||0;
   if(db){
     try{
       await db.doc('config/main').set(config);
-      await enregistrerSnapshotSolde(config.soldeActuel);
-      toast('Configuration enregistrée ✓ — le solde évoluera désormais automatiquement jour après jour');
+      if(soldeModifieManuellement) await enregistrerSnapshotSolde(config.soldeActuel);
+      toast('Configuration enregistrée ✓'+(soldeModifieManuellement ? ' — le solde évoluera désormais automatiquement jour après jour' : ''));
     }catch(e){ toast('⚠️ Échec de la sauvegarde : '+(e.message||e)); }
   } else {
     toast('⚠️ Configuration prise en compte pour cette session (pas de sauvegarde persistante)');
   }
+  soldeModifieManuellement = false;
   updateSoldeCalculeNote();
   updateTauxDisplay();
 });
@@ -1559,6 +1565,76 @@ function soldeActuelCalcule(){
   }
   return solde;
 }
+
+// ---------- TIMELINE BIDIRECTIONNELLE (passé + futur) POUR LE CALENDRIER ----------
+function listeRevenus(){
+  const revenus = [];
+  if(config.salaireNet) revenus.push({montant: config.salaireNet, jour: config.salaireJour||1, nom:'Salaire', permanent:true});
+  (config.autresRevenus||[]).forEach(r=>{ if(r.montant) revenus.push({montant:r.montant, jour:r.jour||1, nom:r.nom||'Revenu', permanent:r.permanent, dateDebut:r.dateDebut, dureeMois:r.dureeMois}); });
+  return revenus;
+}
+function evenementsDuJour(d, revenus){
+  const events = [];
+  const dayOfMonth = d.getDate();
+  const lastDay = joursDansMois(d.getFullYear(), d.getMonth());
+  revenus.forEach(r=>{
+    const jourEffectif = Math.min(r.jour, lastDay);
+    if(dayOfMonth===jourEffectif && isRevenuActif(r, d.getFullYear(), d.getMonth())) events.push({type:'revenu', nom:r.nom, montant:r.montant});
+  });
+  (depensesFixesCache||[]).forEach(dep=>{
+    const jourEffectif = Math.min(dep.jour, lastDay);
+    if(dayOfMonth===jourEffectif) events.push({type:'depense', nom:dep.nom, montant:dep.montant});
+  });
+  (empruntsCache||[]).forEach(em=>{
+    const jourEffectif = Math.min(em.jour||1, lastDay);
+    const dateFin = new Date(em.dateFin); dateFin.setHours(0,0,0,0);
+    if(dayOfMonth===jourEffectif && d.getTime()<=dateFin.getTime()) events.push({type:'emprunt', nom:em.nom, montant:em.mensualite});
+  });
+  (echeancesCache||[]).forEach(ech=>{
+    const echDate = new Date(ech.date); echDate.setHours(0,0,0,0);
+    if(echDate.getTime()===d.getTime()) events.push({type:'echeance', nom:ech.nom, montant:ech.montant});
+  });
+  return events;
+}
+function deltaEvenements(events){
+  return events.reduce((s,e)=> s + (e.type==='revenu' ? e.montant : -e.montant), 0);
+}
+function construireTimeline(startDate, endDate){
+  const revenus = listeRevenus();
+  const anchorDateStr = config.soldeActuelDate || todayISO();
+  const anchor = new Date(anchorDateStr); anchor.setHours(0,0,0,0);
+  const anchorBalance = config.soldeActuel||0;
+
+  let soldeAvantStart;
+  if(startDate.getTime() <= anchor.getTime()){
+    let solde = anchorBalance;
+    const d = new Date(anchor);
+    while(d.getTime() > startDate.getTime()){
+      d.setDate(d.getDate()-1);
+      solde -= deltaEvenements(evenementsDuJour(d, revenus));
+    }
+    soldeAvantStart = solde;
+  } else {
+    let solde = anchorBalance;
+    const d = new Date(anchor);
+    while(d.getTime() < startDate.getTime()){
+      solde += deltaEvenements(evenementsDuJour(d, revenus));
+      d.setDate(d.getDate()+1);
+    }
+    soldeAvantStart = solde;
+  }
+
+  const timeline = [];
+  let solde = soldeAvantStart;
+  const d = new Date(startDate);
+  while(d.getTime() <= endDate.getTime()){
+    const events = evenementsDuJour(d, revenus);
+    solde += deltaEvenements(events);
+    timeline.push({date: new Date(d), solde, events});
+    d.setDate(d.getDate()+1);
+  }
+  return timeline;
+}
 function genererProjection(nbJours, extraEcheances){
   extraEcheances = extraEcheances || [];
   const start = new Date(); start.setHours(0,0,0,0);
@@ -1717,22 +1793,19 @@ function initCalState(){
 }
 function renderCalendarGrid(){
   if(!calState) initCalState();
-  const timeline = genererProjection(400);
+  const {year, month} = calState;
+  const debutFenetre = new Date(year, month, 1); debutFenetre.setDate(debutFenetre.getDate()-3);
+  const finFenetre = new Date(year, month+1, 0); finFenetre.setDate(finFenetre.getDate()+3);
+  const timeline = construireTimeline(debutFenetre, finFenetre);
   const byDate = {};
   timeline.forEach(t=>{
     const key = t.date.getFullYear()+'-'+String(t.date.getMonth()+1).padStart(2,'0')+'-'+String(t.date.getDate()).padStart(2,'0');
     byDate[key] = t;
   });
 
-  const {year, month} = calState;
   let monthLabel = new Date(year, month, 1).toLocaleDateString('fr-FR', {month:'long', year:'numeric'});
   monthLabel = monthLabel.charAt(0).toUpperCase()+monthLabel.slice(1);
   document.getElementById('cal-month-label').textContent = monthLabel;
-
-  const today = new Date(); today.setHours(0,0,0,0);
-  const isCurrentMonth = (year===today.getFullYear() && month===today.getMonth());
-  document.getElementById('cal-prev').disabled = isCurrentMonth;
-  document.getElementById('cal-prev').style.opacity = isCurrentMonth ? '0.3' : '1';
 
   const firstOfMonth = new Date(year, month, 1);
   const startWeekday = (firstOfMonth.getDay()+6)%7; // lundi = 0

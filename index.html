@@ -755,13 +755,14 @@
 
 <script>
 // ============ CONFIGURATION SUPABASE ============
-// Remplace ces deux valeurs par celles de TON projet Supabase
-// (Project Settings > API dans le tableau de bord Supabase)
-const SUPABASE_URL = 'https://qcwvyzfgenmehjtdynxd.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFjd3Z5emZnZW5tZWhqdGR5bnhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NDE3OTcsImV4cCI6MjEwNTMxNzc5N30.7hQwdgrfQkMNSbtco02hFbopARGvz3pAq29CMjutD7I';
+// Projet Supabase commun (partagé avec Muscu). Les données de Coût Réel
+// sont isolées dans le schéma "cout_reel".
+const SUPABASE_URL = 'https://iqztehywqhwcvgskeosu.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxenRlaHl3cWh3Y3Znc2tlb3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MDEzNjEsImV4cCI6MjA5OTk3NzM2MX0.2Ewkms1v3HG6LpKZumGqACKG1Rw-1nWzfa6ZOauFQj0';
+const SUPABASE_SCHEMA = 'cout_reel';
 // ==================================================
 
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: SUPABASE_SCHEMA } });
 let currentUserId = null;
 
 // ---------- THEME ----------
